@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Tail thinking from a Claude Code session
+
+set -e
+
+usage() {
+    cat <<EOF
+cc-tail - Tail thinking from a Claude Code session
+
+USAGE:
+    cc-tail [OPTIONS] [session-id] [project-path]
+
+OPTIONS:
+    --no-follow  Print existing content and exit (default: follow live like tail -f)
+    --tools      Also show tool calls (Edit, Bash, Write, etc.)
+    -h, --help   Show this help message
+
+ARGUMENTS:
+    session-id    UUID of the session (from /status). If omitted, uses most recent.
+    project-path  Path to the project. If omitted, uses current directory.
+
+EXAMPLES:
+    cc-tail                          # follow live thinking in real-time
+    cc-tail --no-follow              # print existing thinking and exit
+    cc-tail --tools                  # follow live, include tool calls
+    cc-tail --no-follow --tools      # print existing thinking + tools
+EOF
+    exit 0
+}
+
+NO_FOLLOW=false
+SHOW_TOOLS=false
+
+# Parse flags
+while [[ "$1" == -* ]]; do
+    case "$1" in
+        --no-follow)
+            NO_FOLLOW=true
+            shift
+            ;;
+        --tools)
+            SHOW_TOOLS=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Unknown flag: $1" >&2
+            echo "Use --help for usage information" >&2
+            exit 1
+            ;;
+    esac
+done
+
+CLAUDE_DIR="$HOME/.claude/projects"
+
+# Colors (matching Claude Code style) - use $'...' for actual escape chars
+RESET=$'\033[0m'
+DIM=$'\033[2m'
+BOLD=$'\033[1m'
+CYAN=$'\033[36m'
+YELLOW=$'\033[33m'
+GREEN=$'\033[32m'
+MAGENTA=$'\033[35m'
+BLUE=$'\033[34m'
+RED=$'\033[31m'
+WHITE=$'\033[37m'
+
+# Convert path to Claude's directory format (slashes become dashes)
+path_to_claude_dir() {
+    echo "${1//\//-}"
+}
+
+# Highlight backticked content in the text, returning to specified color after
+highlight_backticks() {
+    local return_color="$1"
+    # Replace `text` with yellow, then return to the block color
+    sed -E "s/\`([^\`]+)\`/${YELLOW}\`\1\`${return_color}/g"
+}
+
+# Format thinking output with colors
+format_thinking() {
+    local text="$1"
+    local counter="$2"
+
+    # Cycle through colors for different thinking blocks
+    local colors=("$CYAN" "$GREEN" "$MAGENTA" "$BLUE")
+    local color_idx=$((counter % 4))
+    local block_color="${colors[$color_idx]}"
+
+    echo "$text" | highlight_backticks "$block_color" | while IFS= read -r line; do
+        echo "${block_color}${line}${RESET}"
+    done
+}
+
+# Format a diff between old and new strings
+format_diff() {
+    local old_string="$1"
+    local new_string="$2"
+
+    # Show old lines in red, new lines in green
+    echo "$old_string" | while IFS= read -r line; do
+        echo "${RED}- ${line}${RESET}"
+    done
+    echo "$new_string" | while IFS= read -r line; do
+        echo "${GREEN}+ ${line}${RESET}"
+    done
+}
+
+# Format tool call output
+format_tool_call() {
+    local tool_name="$1"
+    local tool_input="$2"
+    local timestamp="$3"
+
+    # Format timestamp nicely
+    if [[ -n "$timestamp" ]]; then
+        formatted_time=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${timestamp%%.*}" "+%H:%M:%S" 2>/dev/null || echo "$timestamp")
+    else
+        formatted_time="??:??:??"
+    fi
+
+    echo ""
+    echo "${DIM}─── ${CYAN}${tool_name}${RESET} ${DIM}@ $formatted_time ───${RESET}"
+
+    case "$tool_name" in
+        Edit)
+            local file_path=$(echo "$tool_input" | jq -r '.file_path // empty')
+            local old_string=$(echo "$tool_input" | jq -r '.old_string // empty')
+            local new_string=$(echo "$tool_input" | jq -r '.new_string // empty')
+            local replace_all=$(echo "$tool_input" | jq -r '.replace_all // false')
+
+            # Shorten file path for display
+            local short_path="${file_path/#$HOME/~}"
+            echo "${BOLD}${short_path}${RESET}"
+            if [[ "$replace_all" == "true" ]]; then
+                echo "${DIM}(replace all)${RESET}"
+            fi
+            format_diff "$old_string" "$new_string"
+            ;;
+        Write)
+            local file_path=$(echo "$tool_input" | jq -r '.file_path // empty')
+            local content=$(echo "$tool_input" | jq -r '.content // empty')
+            local short_path="${file_path/#$HOME/~}"
+            local line_count=$(echo "$content" | wc -l | tr -d ' ')
+            echo "${BOLD}${short_path}${RESET} ${DIM}(${line_count} lines)${RESET}"
+            # Show first few lines
+            echo "$content" | head -10 | while IFS= read -r line; do
+                echo "${GREEN}+ ${line}${RESET}"
+            done
+            if [[ $line_count -gt 10 ]]; then
+                echo "${DIM}... ($((line_count - 10)) more lines)${RESET}"
+            fi
+            ;;
+        Bash)
+            local command=$(echo "$tool_input" | jq -r '.command // empty')
+            local description=$(echo "$tool_input" | jq -r '.description // empty')
+            if [[ -n "$description" ]]; then
+                echo "${DIM}# ${description}${RESET}"
+            fi
+            echo "${YELLOW}\$ ${command}${RESET}"
+            ;;
+        Read)
+            local file_path=$(echo "$tool_input" | jq -r '.file_path // empty')
+            local short_path="${file_path/#$HOME/~}"
+            echo "${DIM}reading${RESET} ${BOLD}${short_path}${RESET}"
+            ;;
+        Glob)
+            local pattern=$(echo "$tool_input" | jq -r '.pattern // empty')
+            local path=$(echo "$tool_input" | jq -r '.path // "."')
+            echo "${DIM}glob${RESET} ${YELLOW}${pattern}${RESET} ${DIM}in${RESET} ${path}"
+            ;;
+        Grep)
+            local pattern=$(echo "$tool_input" | jq -r '.pattern // empty')
+            local path=$(echo "$tool_input" | jq -r '.path // "."')
+            echo "${DIM}grep${RESET} ${YELLOW}${pattern}${RESET} ${DIM}in${RESET} ${path}"
+            ;;
+        Task)
+            local description=$(echo "$tool_input" | jq -r '.description // empty')
+            local subagent_type=$(echo "$tool_input" | jq -r '.subagent_type // empty')
+            echo "${MAGENTA}${subagent_type}${RESET}: ${description}"
+            ;;
+        *)
+            # Generic tool display
+            echo "$tool_input" | jq -C '.' 2>/dev/null || echo "$tool_input"
+            ;;
+    esac
+    echo ""
+}
+
+# Find session file
+if [[ -n "$1" ]]; then
+    SESSION_ID="$1"
+    if [[ -n "$2" ]]; then
+        PROJECT_PATH="$2"
+    else
+        PROJECT_PATH="$(pwd)"
+    fi
+    PROJECT_DIR="$CLAUDE_DIR/$(path_to_claude_dir "$PROJECT_PATH")"
+    SESSION_FILE="$PROJECT_DIR/$SESSION_ID.jsonl"
+else
+    # Use current directory, find most recent session
+    PROJECT_DIR="$CLAUDE_DIR/$(path_to_claude_dir "$(pwd)")"
+    if [[ ! -d "$PROJECT_DIR" ]]; then
+        echo "${BOLD}No Claude sessions found for $(pwd)${RESET}" >&2
+        echo "${DIM}Project dir would be: $PROJECT_DIR${RESET}" >&2
+        exit 1
+    fi
+    SESSION_FILE=$(ls -t "$PROJECT_DIR"/*.jsonl 2>/dev/null | head -1)
+    SESSION_ID=$(basename "$SESSION_FILE" .jsonl)
+fi
+
+if [[ ! -f "$SESSION_FILE" ]]; then
+    echo "${BOLD}Session file not found: $SESSION_FILE${RESET}" >&2
+    exit 1
+fi
+
+# Print header
+mode_desc="thinking"
+if [[ "$SHOW_TOOLS" == true ]]; then
+    mode_desc="thinking + tools"
+fi
+
+if [[ "$NO_FOLLOW" == true ]]; then
+    echo "${BOLD}Showing ${mode_desc} from session:${RESET} ${CYAN}$SESSION_ID${RESET}"
+else
+    echo "${BOLD}Following ${mode_desc} from session:${RESET} ${CYAN}$SESSION_ID${RESET}"
+fi
+echo "${DIM}$SESSION_FILE${RESET}"
+echo "${DIM}────────────────────────────────────────${RESET}"
+echo ""
+
+counter=0
+
+# Choose between tail -f (follow) or cat (dump existing)
+if [[ "$NO_FOLLOW" == true ]]; then
+    read_cmd="cat"
+else
+    read_cmd="tail -f"
+fi
+
+# Process content
+$read_cmd "$SESSION_FILE" | while read -r line; do
+    timestamp=$(echo "$line" | jq -r '.timestamp // empty' 2>/dev/null)
+
+    # Check if this line contains thinking
+    if echo "$line" | jq -e '.message.content[]? | select(.type == "thinking")' >/dev/null 2>&1; then
+        thinking=$(echo "$line" | jq -r '.message.content[] | select(.type == "thinking") | .thinking' 2>/dev/null)
+        if [[ -n "$thinking" && "$thinking" != "null" ]]; then
+            # Format timestamp nicely
+            if [[ -n "$timestamp" ]]; then
+                formatted_time=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${timestamp%%.*}" "+%H:%M:%S" 2>/dev/null || echo "$timestamp")
+            else
+                formatted_time="??:??:??"
+            fi
+
+            echo ""
+            echo "${DIM}─── ${YELLOW}thinking${RESET} ${DIM}@ $formatted_time ───${RESET}"
+            format_thinking "$thinking" "$counter"
+            echo ""
+
+            ((counter++)) || true
+        fi
+    fi
+
+    # Check for tool calls if --tools flag is set
+    if [[ "$SHOW_TOOLS" == true ]]; then
+        if echo "$line" | jq -e '.message.content[]? | select(.type == "tool_use")' >/dev/null 2>&1; then
+            # Process each tool call in the message
+            echo "$line" | jq -c '.message.content[] | select(.type == "tool_use")' 2>/dev/null | while read -r tool_call; do
+                tool_name=$(echo "$tool_call" | jq -r '.name // empty')
+                tool_input=$(echo "$tool_call" | jq -c '.input // {}')
+                format_tool_call "$tool_name" "$tool_input" "$timestamp"
+            done
+        fi
+    fi
+done
