@@ -92,7 +92,10 @@ CYAN=$'\033[36m'
 WHITE=$'\033[37m'
 MAGENTA=$'\033[35m'
 
-# Subtle blue/gray shades for thinking (RGB)
+# Secondary content (tool output, descriptions) - readable but muted
+SECONDARY=$'\033[38;2;160;160;160m'
+
+# Thinking blocks - rotating blue/gray shades
 BLUE1=$'\033[38;2;100;149;237m'  # cornflower blue
 BLUE2=$'\033[38;2;119;136;153m'  # light slate gray
 BLUE3=$'\033[38;2;135;160;190m'  # steel blue-ish
@@ -195,7 +198,7 @@ format_tool_call() {
         Bash)
             local command=$(echo "$tool_input" | jq -r '.command // empty')
             local description=$(echo "$tool_input" | jq -r '.description // empty')
-            [[ -n "$description" ]] && echo "${DIM}# ${description}${RESET}"
+            [[ -n "$description" ]] && echo "${SECONDARY}# ${description}${RESET}"
             echo "${YELLOW}\$ ${command}${RESET}"
             ;;
         Read)
@@ -235,14 +238,14 @@ format_tool_result() {
 
     [[ -z "$output" && -z "$stderr" ]] && return
 
-    echo "${DIM}    ↳${RESET}"
+    echo "${SECONDARY}    ↳${RESET}"
 
     # Truncate long output
     local max_lines=15
     if [[ -n "$output" && "$output" != "null" ]]; then
         local line_count=$(echo "$output" | wc -l | tr -d ' ')
         echo "$output" | head -$max_lines | while IFS= read -r line; do
-            echo "${DIM}    ${line}${RESET}"
+            echo "${SECONDARY}    ${line}${RESET}"
         done
         [[ $line_count -gt $max_lines ]] && echo "${DIM}    ... ($((line_count - max_lines)) more lines)${RESET}"
     fi
@@ -301,10 +304,11 @@ mode_desc="thinking"
 
 # Print header
 if [[ "$NO_FOLLOW" == true ]]; then
-    echo "${BOLD}Showing ${mode_desc} from session:${RESET} ${CYAN}$SESSION_ID${RESET}"
+    echo "${BOLD}Showing${RESET} session: ${CYAN}$SESSION_ID${RESET}"
 else
-    echo "${BOLD}Following ${mode_desc} from session:${RESET} ${CYAN}$SESSION_ID${RESET}"
+    echo "${BOLD}Following${RESET} session: ${CYAN}$SESSION_ID${RESET}"
 fi
+echo "$mode_desc"
 echo "${DIM}$SESSION_FILE${RESET}"
 echo "${DIM}────────────────────────────────────────${RESET}"
 

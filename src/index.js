@@ -40,13 +40,20 @@ const cli = meow(`
   },
 });
 
-// Shades of blue/gray for thinking blocks (subtle gradations)
-const THINKING_COLORS = [
-  chalk.rgb(100, 149, 237),  // cornflower blue
-  chalk.rgb(119, 136, 153),  // light slate gray
-  chalk.rgb(135, 160, 190),  // steel blue-ish
-  chalk.rgb(95, 130, 160),   // darker steel
-];
+// Color palette - centralized for consistency
+const COLORS = {
+  // Structural (separators, labels) - keep dim
+  separator: chalk.dim,
+  // Secondary content (tool output, descriptions) - readable but muted
+  secondary: chalk.rgb(160, 160, 160),
+  // Thinking blocks - rotating blue/gray shades
+  thinking: [
+    chalk.rgb(100, 149, 237),  // cornflower blue
+    chalk.rgb(119, 136, 153),  // light slate gray
+    chalk.rgb(135, 160, 190),  // steel blue-ish
+    chalk.rgb(95, 130, 160),   // darker steel
+  ],
+};
 let thinkingCount = 0;
 
 // Convert path to Claude's directory format
@@ -177,7 +184,7 @@ function renderDiff(oldStr, newStr, contextLines = 3) {
 
 // Print a thinking block
 function printThinking(thinking, timestamp) {
-  const color = THINKING_COLORS[thinkingCount % THINKING_COLORS.length];
+  const color = COLORS.thinking[thinkingCount % COLORS.thinking.length];
   thinkingCount++;
 
   console.log();
@@ -250,7 +257,7 @@ function printToolCall(name, input, timestamp) {
       break;
     }
     case 'Bash': {
-      if (input.description) console.log(chalk.dim(`# ${input.description}`));
+      if (input.description) console.log(COLORS.secondary(`# ${input.description}`));
       console.log(chalk.yellow(`$ ${input.command}`));
       break;
     }
@@ -285,7 +292,7 @@ function printToolResult(content, toolUseResult, timestamp) {
 
   if (!output && !stderr) return;
 
-  console.log(chalk.dim(`    ↳ `));
+  console.log(COLORS.secondary(`    ↳`));
 
   // Truncate long output
   const maxLines = 15;
@@ -293,10 +300,10 @@ function printToolResult(content, toolUseResult, timestamp) {
     const lines = output.split('\n');
     const truncated = lines.length > maxLines;
     lines.slice(0, maxLines).forEach(line => {
-      console.log(chalk.dim(`    ${line}`));
+      console.log(COLORS.secondary(`    ${line}`));
     });
     if (truncated) {
-      console.log(chalk.dim(`    ... (${lines.length - maxLines} more lines)`));
+      console.log(COLORS.separator(`    ... (${lines.length - maxLines} more lines)`));
     }
   }
 
@@ -369,8 +376,8 @@ if (showUser) parts.push('user');
 const modeDesc = parts.join(' + ');
 
 // Print header
-console.log(chalk.bold(cli.flags.follow ? 'Following' : 'Showing'),
-  modeDesc, 'from session:', chalk.cyan(sessionIdFromFile));
+console.log(chalk.bold(cli.flags.follow ? 'Following' : 'Showing'), 'session:', chalk.cyan(sessionIdFromFile));
+console.log(modeDesc);
 console.log(chalk.dim(sessionFile));
 console.log(chalk.dim('────────────────────────────────────────'));
 
