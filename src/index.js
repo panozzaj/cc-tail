@@ -123,32 +123,42 @@ function highlightBackticks(text, baseColor) {
   return text.replace(/`([^`]+)`/g, (_, code) => chalk.yellow(`\`${code}\``) + baseColor(''));
 }
 
-// Render a unified diff with context
+// Render a unified diff with line numbers and background colors (like Claude Code)
 function renderDiff(oldStr, newStr, contextLines = 3) {
   const changes = diffLines(oldStr || '', newStr || '');
-  const lines = [];
 
-  // Track line numbers
+  // Build list of all lines with metadata
   let oldLineNum = 1;
   let newLineNum = 1;
-
-  // First pass: mark all lines with their type and line numbers
   const allLines = [];
+
   for (const change of changes) {
     const changeLines = change.value.split('\n');
-    // Remove trailing empty string from split
     if (changeLines[changeLines.length - 1] === '') changeLines.pop();
 
     for (const line of changeLines) {
       if (change.added) {
-        allLines.push({ type: 'add', line, newNum: newLineNum++ });
+        allLines.push({ type: 'add', line, num: newLineNum++ });
       } else if (change.removed) {
-        allLines.push({ type: 'remove', line, oldNum: oldLineNum++ });
+        allLines.push({ type: 'remove', line, num: oldLineNum++ });
       } else {
-        allLines.push({ type: 'context', line, oldNum: oldLineNum++, newNum: newLineNum++ });
+        allLines.push({ type: 'context', line, num: newLineNum });
+        oldLineNum++;
+        newLineNum++;
       }
     }
   }
+
+  // Find max line number for padding
+  const maxNum = Math.max(...allLines.map(l => l.num));
+  const numWidth = String(maxNum).length;
+  const pad = (n) => String(n).padStart(numWidth, ' ');
+
+  // Diff colors - subtle backgrounds like Claude Code
+  const addedBg = chalk.bgRgb(30, 60, 30);      // dark green bg
+  const removedBg = chalk.bgRgb(60, 30, 30);    // dark red bg
+  const addedText = chalk.green;
+  const removedText = chalk.red;
 
   // Find ranges of changes and include context
   const output = [];
@@ -157,48 +167,45 @@ function renderDiff(oldStr, newStr, contextLines = 3) {
     const item = allLines[i];
 
     if (item.type === 'add' || item.type === 'remove') {
-      // Found a change - include context before
       const contextStart = Math.max(0, i - contextLines);
 
-      // Add separator if we skipped lines
       if (contextStart > 0 && output.length === 0) {
         output.push(chalk.dim('  ...'));
       }
 
-      // Add context before
+      // Context before
       for (let j = contextStart; j < i; j++) {
         const ctx = allLines[j];
-        if (ctx.type === 'context' && !output.includes(ctx)) {
-          output.push(chalk.dim(`  ${ctx.line}`));
+        if (ctx.type === 'context') {
+          output.push(chalk.dim(`${pad(ctx.num)}   ${ctx.line}`));
         }
       }
 
-      // Add the change and following changes
+      // Changes
       while (i < allLines.length && (allLines[i].type === 'add' || allLines[i].type === 'remove' ||
              (allLines[i].type === 'context' && i + 1 < allLines.length &&
               (allLines[i + 1].type === 'add' || allLines[i + 1].type === 'remove')))) {
         const curr = allLines[i];
         if (curr.type === 'add') {
-          output.push(chalk.green(`+ ${curr.line}`));
+          output.push(addedBg(addedText(`${pad(curr.num)} + ${curr.line}`)));
         } else if (curr.type === 'remove') {
-          output.push(chalk.red(`- ${curr.line}`));
+          output.push(removedBg(removedText(`${pad(curr.num)} - ${curr.line}`)));
         } else {
-          output.push(chalk.dim(`  ${curr.line}`));
+          output.push(chalk.dim(`${pad(curr.num)}   ${curr.line}`));
         }
         i++;
       }
 
-      // Add context after
+      // Context after
       const contextEnd = Math.min(allLines.length, i + contextLines);
       for (let j = i; j < contextEnd; j++) {
         const ctx = allLines[j];
         if (ctx.type === 'context') {
-          output.push(chalk.dim(`  ${ctx.line}`));
+          output.push(chalk.dim(`${pad(ctx.num)}   ${ctx.line}`));
         }
       }
       i = contextEnd;
 
-      // Add separator if more content follows
       if (i < allLines.length) {
         output.push(chalk.dim('  ...'));
       }
