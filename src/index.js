@@ -15,12 +15,13 @@ const cli = meow(`
     $ cc-tail [options] [session-id] [project-path]
 
   ${chalk.dim('Options')}
-    --no-follow  Print existing content and exit (default: follow live)
-    --tools      Also show tool calls (Edit, Bash, Write, etc.)
+    --no-follow    Print existing content and exit (default: follow live)
+    --tools        Also show tool calls (Edit, Bash, Write, etc.)
     --tool-output  Also show tool results/outputs
-    --output     Also show Claude's text responses
-    --all        Show everything (thinking + tools + tool-output + output)
-    -h, --help   Show this help
+    --output       Also show Claude's text responses
+    --user         Also show user messages
+    --all          Show everything
+    -h, --help     Show this help
 
   ${chalk.dim('Examples')}
     $ cc-tail                          # follow live thinking
@@ -34,6 +35,7 @@ const cli = meow(`
     tools: { type: 'boolean', default: false },
     toolOutput: { type: 'boolean', default: false },
     output: { type: 'boolean', default: false },
+    user: { type: 'boolean', default: false },
     all: { type: 'boolean', default: false },
   },
 });
@@ -206,6 +208,13 @@ function printTextResponse(text, timestamp) {
   console.log(highlightCodeBlocks(text));
 }
 
+// Print user message
+function printUserMessage(text, timestamp) {
+  console.log();
+  console.log(chalk.dim(`─── ${chalk.green('user')} @ ${formatTime(timestamp)} ───`));
+  console.log(chalk.green(text));
+}
+
 // Print a tool call
 function printToolCall(name, input, timestamp) {
   console.log();
@@ -283,7 +292,13 @@ function printToolResult(content, toolUseResult, timestamp) {
 }
 
 // Process a single JSONL entry
-function processEntry(entry, { showTools, showToolOutput, showOutput }) {
+function processEntry(entry, { showTools, showToolOutput, showOutput, showUser }) {
+  // Handle user messages (top-level type)
+  if (showUser && entry.type === 'user' && entry.message?.content) {
+    printUserMessage(entry.message.content, entry.timestamp);
+    return;
+  }
+
   const content = entry.message?.content;
   if (!Array.isArray(content)) return;
 
@@ -319,12 +334,14 @@ const sessionIdFromFile = path.basename(sessionFile, '.jsonl');
 const showTools = cli.flags.tools || cli.flags.all;
 const showToolOutput = cli.flags.toolOutput || cli.flags.all;
 const showOutput = cli.flags.output || cli.flags.all;
+const showUser = cli.flags.user || cli.flags.all;
 
 // Build description of what we're showing
 const parts = ['thinking'];
 if (showTools) parts.push('tools');
 if (showToolOutput) parts.push('tool-output');
 if (showOutput) parts.push('output');
+if (showUser) parts.push('user');
 const modeDesc = parts.join(' + ');
 
 // Print header
@@ -337,7 +354,7 @@ console.log(chalk.dim('───────────────────
 const existingContent = fs.readFileSync(sessionFile, 'utf8');
 for (const line of existingContent.split('\n').filter(Boolean)) {
   try {
-    processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput });
+    processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput, showUser });
   } catch {}
 }
 
@@ -359,7 +376,7 @@ watcher.on('change', () => {
 
     for (const line of buffer.toString().split('\n').filter(Boolean)) {
       try {
-        processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput });
+        processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput, showUser });
       } catch {}
     }
     lastSize = newSize;

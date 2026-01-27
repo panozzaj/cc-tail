@@ -15,7 +15,8 @@ OPTIONS:
     --tools        Also show tool calls (Edit, Bash, Write, etc.)
     --tool-output  Also show tool results/outputs
     --output       Also show Claude's text responses
-    --all          Show everything (thinking + tools + tool-output + output)
+    --user         Also show user messages
+    --all          Show everything (thinking + tools + tool-output + output + user)
     -h, --help     Show this help message
 
 ARGUMENTS:
@@ -35,6 +36,7 @@ NO_FOLLOW=false
 SHOW_TOOLS=false
 SHOW_TOOL_OUTPUT=false
 SHOW_OUTPUT=false
+SHOW_USER=false
 
 # Parse flags
 while [[ "$1" == -* ]]; do
@@ -55,10 +57,15 @@ while [[ "$1" == -* ]]; do
             SHOW_OUTPUT=true
             shift
             ;;
+        --user)
+            SHOW_USER=true
+            shift
+            ;;
         --all)
             SHOW_TOOLS=true
             SHOW_TOOL_OUTPUT=true
             SHOW_OUTPUT=true
+            SHOW_USER=true
             shift
             ;;
         -h|--help)
@@ -253,6 +260,16 @@ format_response() {
     echo "${WHITE}${text}${RESET}"
 }
 
+# Format user message
+format_user_message() {
+    local text="$1"
+    local timestamp="$2"
+
+    echo ""
+    echo "${DIM}─── ${GREEN}user${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
+    echo "${GREEN}${text}${RESET}"
+}
+
 # Find session file
 if [[ -n "$1" ]]; then
     SESSION_ID="$1"
@@ -280,6 +297,7 @@ mode_desc="thinking"
 [[ "$SHOW_TOOLS" == true ]] && mode_desc="$mode_desc + tools"
 [[ "$SHOW_TOOL_OUTPUT" == true ]] && mode_desc="$mode_desc + tool-output"
 [[ "$SHOW_OUTPUT" == true ]] && mode_desc="$mode_desc + output"
+[[ "$SHOW_USER" == true ]] && mode_desc="$mode_desc + user"
 
 # Print header
 if [[ "$NO_FOLLOW" == true ]]; then
@@ -302,6 +320,16 @@ fi
 # Process content
 $read_cmd "$SESSION_FILE" | while read -r line; do
     timestamp=$(echo "$line" | jq -r '.timestamp // empty' 2>/dev/null)
+
+    # User messages
+    if [[ "$SHOW_USER" == true ]]; then
+        if echo "$line" | jq -e 'select(.type == "user")' >/dev/null 2>&1; then
+            user_content=$(echo "$line" | jq -r '.message.content // empty' 2>/dev/null)
+            if [[ -n "$user_content" && "$user_content" != "null" ]]; then
+                format_user_message "$user_content" "$timestamp"
+            fi
+        fi
+    fi
 
     # Thinking
     if echo "$line" | jq -e '.message.content[]? | select(.type == "thinking")' >/dev/null 2>&1; then
