@@ -36,7 +36,9 @@ node src/index.js          # follow live thinking (JS version)
 --all              # show everything
 ```
 
-Specify a session ID (from `/status` in Claude Code) or project path:
+By default, cc-tail finds the most recently updated session for the current working directory.
+
+To specify a session ID (from `/status` in Claude Code) or project path:
 ```bash
 cc-tail <session-id>
 cc-tail <session-id> /path/to/project
