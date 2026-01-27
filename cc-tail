@@ -116,6 +116,12 @@ format_time() {
     fi
 }
 
+# Word wrap text to terminal width
+wrap_text() {
+    local width="${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}"
+    fold -s -w "$width"
+}
+
 # Highlight backticked content in the text
 highlight_backticks() {
     local return_color="$1"
@@ -131,7 +137,7 @@ format_thinking() {
     local color_idx=$((counter % 4))
     local block_color="${colors[$color_idx]}"
 
-    echo "$text" | highlight_backticks "$block_color" | while IFS= read -r line; do
+    echo "$text" | wrap_text | highlight_backticks "$block_color" | while IFS= read -r line; do
         echo "${block_color}${line}${RESET}"
     done
 }
@@ -260,7 +266,9 @@ format_response() {
 
     echo ""
     echo "${DIM}─── ${WHITE}response${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
-    echo "${WHITE}${text}${RESET}"
+    echo "$text" | wrap_text | while IFS= read -r line; do
+        echo "${WHITE}${line}${RESET}"
+    done
 }
 
 # Format user message
@@ -270,7 +278,9 @@ format_user_message() {
 
     echo ""
     echo "${DIM}─── ${MAGENTA}user${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
-    echo "${MAGENTA}${text}${RESET}"
+    echo "$text" | wrap_text | while IFS= read -r line; do
+        echo "${MAGENTA}${line}${RESET}"
+    done
 }
 
 # Find session file

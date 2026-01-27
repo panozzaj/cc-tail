@@ -85,6 +85,34 @@ function shortPath(p) {
   return p?.replace(os.homedir(), '~') || '';
 }
 
+// Word wrap text to terminal width
+function wrapText(text, indent = 0) {
+  const width = process.stdout.columns || 80;
+  const maxWidth = width - indent;
+  if (maxWidth < 20) return text; // Too narrow, don't wrap
+
+  const indentStr = ' '.repeat(indent);
+  return text.split('\n').map(line => {
+    if (line.length <= maxWidth) return line;
+
+    const words = line.split(/(\s+)/);
+    const wrapped = [];
+    let current = '';
+
+    for (const word of words) {
+      if (current.length + word.length <= maxWidth) {
+        current += word;
+      } else {
+        if (current) wrapped.push(current);
+        current = word.trimStart();
+      }
+    }
+    if (current) wrapped.push(current);
+
+    return wrapped.join('\n' + indentStr);
+  }).join('\n');
+}
+
 // Format timestamp
 function formatTime(timestamp) {
   return timestamp ? new Date(timestamp).toLocaleTimeString() : '??:??:??';
@@ -190,7 +218,8 @@ function printThinking(thinking, timestamp) {
   console.log();
   console.log(chalk.dim(`─── ${chalk.yellow('thinking')} @ ${formatTime(timestamp)} ───`));
 
-  for (const line of thinking.split('\n')) {
+  const wrapped = wrapText(thinking);
+  for (const line of wrapped.split('\n')) {
     console.log(color(highlightBackticks(line, color)));
   }
 }
@@ -212,7 +241,19 @@ function highlightCodeBlocks(text) {
 function printTextResponse(text, timestamp) {
   console.log();
   console.log(chalk.dim(`─── ${chalk.white('response')} @ ${formatTime(timestamp)} ───`));
-  console.log(highlightCodeBlocks(text));
+  // Wrap text but preserve code blocks
+  const wrapped = wrapTextPreservingCodeBlocks(text);
+  console.log(highlightCodeBlocks(wrapped));
+}
+
+// Wrap text but leave code blocks untouched
+function wrapTextPreservingCodeBlocks(text) {
+  const parts = text.split(/(```[\s\S]*?```)/);
+  return parts.map((part, i) => {
+    // Odd indices are code blocks (captured groups)
+    if (part.startsWith('```')) return part;
+    return wrapText(part);
+  }).join('');
 }
 
 // Print user message
@@ -233,7 +274,7 @@ function printUserMessage(content, timestamp) {
 
   console.log();
   console.log(chalk.dim(`─── ${chalk.magenta('user')} @ ${formatTime(timestamp)} ───`));
-  console.log(chalk.magenta(text));
+  console.log(chalk.magenta(wrapText(text)));
 }
 
 // Print a tool call
