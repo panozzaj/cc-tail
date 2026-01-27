@@ -2,6 +2,14 @@
 
 Tail thinking blocks from Claude Code sessions. Useful for understanding Claude's reasoning process in real-time or reviewing past sessions.
 
+## Why
+
+Claude Code doesn't show thinking by default - you need `Ctrl+O` then `Ctrl+E` to view it after the fact. This tool lets you follow thinking in real-time in a separate terminal.
+
+Related Claude Code issues:
+- [#8477](https://github.com/anthropics/claude-code/issues/8477) - Add Option to Always Show Claude's Thinking
+- [#15890](https://github.com/anthropics/claude-code/issues/15890) - Separate flags for showing thinking vs tool results
+
 ## Installation
 
 ```bash
