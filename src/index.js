@@ -16,22 +16,32 @@ const cli = meow(`
   ${chalk.dim('Options')}
     --no-follow  Print existing content and exit (default: follow live)
     --tools      Also show tool calls (Edit, Bash, Write, etc.)
+    --output     Also show Claude's text responses
+    --all        Show everything (thinking + tools + output)
     -h, --help   Show this help
 
   ${chalk.dim('Examples')}
     $ cc-tail                          # follow live thinking
     $ cc-tail --no-follow              # print existing and exit
-    $ cc-tail --tools                  # follow with tool calls
+    $ cc-tail --tools                  # include tool calls
+    $ cc-tail --all                    # show everything
 `, {
   importMeta: import.meta,
   flags: {
     follow: { type: 'boolean', default: true },
     tools: { type: 'boolean', default: false },
+    output: { type: 'boolean', default: false },
+    all: { type: 'boolean', default: false },
   },
 });
 
-// Colors for cycling through thinking blocks
-const THINKING_COLORS = [chalk.cyan, chalk.green, chalk.magenta, chalk.blue];
+// Shades of blue/gray for thinking blocks (subtle gradations)
+const THINKING_COLORS = [
+  chalk.rgb(100, 149, 237),  // cornflower blue
+  chalk.rgb(119, 136, 153),  // light slate gray
+  chalk.rgb(135, 160, 190),  // steel blue-ish
+  chalk.rgb(95, 130, 160),   // darker steel
+];
 let thinkingCount = 0;
 
 // Convert path to Claude's directory format
@@ -173,6 +183,13 @@ function printThinking(thinking, timestamp) {
   }
 }
 
+// Print Claude's text response
+function printTextResponse(text, timestamp) {
+  console.log();
+  console.log(chalk.dim(`─── ${chalk.white('response')} @ ${formatTime(timestamp)} ───`));
+  console.log(chalk.white(text));
+}
+
 // Print a tool call
 function printToolCall(name, input, timestamp) {
   console.log();
@@ -221,7 +238,7 @@ function printToolCall(name, input, timestamp) {
 }
 
 // Process a single JSONL entry
-function processEntry(entry, showTools) {
+function processEntry(entry, { showTools, showOutput }) {
   const content = entry.message?.content;
   if (!Array.isArray(content)) return;
 
@@ -231,6 +248,9 @@ function processEntry(entry, showTools) {
     }
     if (showTools && item.type === 'tool_use') {
       printToolCall(item.name, item.input || {}, entry.timestamp);
+    }
+    if (showOutput && item.type === 'text' && item.text) {
+      printTextResponse(item.text, entry.timestamp);
     }
   }
 }
@@ -247,10 +267,19 @@ if (!sessionFile || !fs.existsSync(sessionFile)) {
 
 const sessionIdFromFile = path.basename(sessionFile, '.jsonl');
 
+// Resolve flags
+const showTools = cli.flags.tools || cli.flags.all;
+const showOutput = cli.flags.output || cli.flags.all;
+
+// Build description of what we're showing
+const parts = ['thinking'];
+if (showTools) parts.push('tools');
+if (showOutput) parts.push('output');
+const modeDesc = parts.join(' + ');
+
 // Print header
 console.log(chalk.bold(cli.flags.follow ? 'Following' : 'Showing'),
-  'thinking' + (cli.flags.tools ? ' + tools' : ''),
-  'from session:', chalk.cyan(sessionIdFromFile));
+  modeDesc, 'from session:', chalk.cyan(sessionIdFromFile));
 console.log(chalk.dim(sessionFile));
 console.log(chalk.dim('────────────────────────────────────────'));
 
@@ -258,7 +287,7 @@ console.log(chalk.dim('───────────────────
 const existingContent = fs.readFileSync(sessionFile, 'utf8');
 for (const line of existingContent.split('\n').filter(Boolean)) {
   try {
-    processEntry(JSON.parse(line), cli.flags.tools);
+    processEntry(JSON.parse(line), { showTools, showOutput });
   } catch {}
 }
 
@@ -280,7 +309,7 @@ watcher.on('change', () => {
 
     for (const line of buffer.toString().split('\n').filter(Boolean)) {
       try {
-        processEntry(JSON.parse(line), cli.flags.tools);
+        processEntry(JSON.parse(line), { showTools, showOutput });
       } catch {}
     }
     lastSize = newSize;
