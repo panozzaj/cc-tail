@@ -2,20 +2,14 @@
   "name": "cc-tail",
   "version": "1.0.0",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "src/index.js",
   "bin": {
-    "cc-tail": "dist/index.js"
+    "cc-tail": "src/index.js"
   },
   "scripts": {
-    "build": "esbuild src/index.jsx --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external",
-    "start": "npm run build && node dist/index.js"
+    "start": "node src/index.js"
   },
-  "keywords": [
-    "claude",
-    "claude-code",
-    "thinking",
-    "tail"
-  ],
+  "keywords": ["claude", "claude-code", "thinking", "tail"],
   "author": "",
   "license": "ISC",
   "description": "Tail thinking from Claude Code sessions",
@@ -23,12 +17,6 @@
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "diff": "^8.0.3",
-    "ink": "^6.6.0",
-    "meow": "^14.0.0",
-    "react": "^19.2.4",
-    "react-devtools-core": "^6.1.5"
-  },
-  "devDependencies": {
-    "esbuild": "^0.27.2"
+    "meow": "^14.0.0"
   }
 }
