@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tail thinking from a Claude Code session
 
-set -e
+# Don't use set -e as jq -e returns non-zero when no match
 
 usage() {
     cat <<EOF
