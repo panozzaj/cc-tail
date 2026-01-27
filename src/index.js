@@ -6,6 +6,7 @@ import path from 'path';
 import os from 'os';
 import { diffLines } from 'diff';
 import chokidar from 'chokidar';
+import { highlight } from 'cli-highlight';
 
 const cli = meow(`
   ${chalk.bold('cc-tail')} - Tail thinking from Claude Code sessions
@@ -16,8 +17,9 @@ const cli = meow(`
   ${chalk.dim('Options')}
     --no-follow  Print existing content and exit (default: follow live)
     --tools      Also show tool calls (Edit, Bash, Write, etc.)
+    --tool-output  Also show tool results/outputs
     --output     Also show Claude's text responses
-    --all        Show everything (thinking + tools + output)
+    --all        Show everything (thinking + tools + tool-output + output)
     -h, --help   Show this help
 
   ${chalk.dim('Examples')}
@@ -30,6 +32,7 @@ const cli = meow(`
   flags: {
     follow: { type: 'boolean', default: true },
     tools: { type: 'boolean', default: false },
+    toolOutput: { type: 'boolean', default: false },
     output: { type: 'boolean', default: false },
     all: { type: 'boolean', default: false },
   },
@@ -183,11 +186,24 @@ function printThinking(thinking, timestamp) {
   }
 }
 
+// Syntax highlight code blocks in text
+function highlightCodeBlocks(text) {
+  // Match ```lang\ncode\n``` blocks
+  return text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    try {
+      const highlighted = highlight(code.trimEnd(), { language: lang || 'plaintext', ignoreIllegals: true });
+      return chalk.dim('```' + lang) + '\n' + highlighted + '\n' + chalk.dim('```');
+    } catch {
+      return chalk.dim('```' + lang) + '\n' + code.trimEnd() + '\n' + chalk.dim('```');
+    }
+  });
+}
+
 // Print Claude's text response
 function printTextResponse(text, timestamp) {
   console.log();
   console.log(chalk.dim(`─── ${chalk.white('response')} @ ${formatTime(timestamp)} ───`));
-  console.log(chalk.white(text));
+  console.log(highlightCodeBlocks(text));
 }
 
 // Print a tool call
@@ -237,8 +253,37 @@ function printToolCall(name, input, timestamp) {
   }
 }
 
+// Print tool result/output
+function printToolResult(content, toolUseResult, timestamp) {
+  // Get output from toolUseResult if available, otherwise from content
+  let output = toolUseResult?.stdout || content;
+  const stderr = toolUseResult?.stderr;
+  const isError = toolUseResult?.is_error || content?.is_error;
+
+  if (!output && !stderr) return;
+
+  console.log(chalk.dim(`    ↳ `));
+
+  // Truncate long output
+  const maxLines = 15;
+  if (output) {
+    const lines = output.split('\n');
+    const truncated = lines.length > maxLines;
+    lines.slice(0, maxLines).forEach(line => {
+      console.log(chalk.dim(`    ${line}`));
+    });
+    if (truncated) {
+      console.log(chalk.dim(`    ... (${lines.length - maxLines} more lines)`));
+    }
+  }
+
+  if (stderr) {
+    console.log(chalk.red(`    stderr: ${stderr.slice(0, 200)}`));
+  }
+}
+
 // Process a single JSONL entry
-function processEntry(entry, { showTools, showOutput }) {
+function processEntry(entry, { showTools, showToolOutput, showOutput }) {
   const content = entry.message?.content;
   if (!Array.isArray(content)) return;
 
@@ -248,6 +293,9 @@ function processEntry(entry, { showTools, showOutput }) {
     }
     if (showTools && item.type === 'tool_use') {
       printToolCall(item.name, item.input || {}, entry.timestamp);
+    }
+    if (showToolOutput && item.type === 'tool_result') {
+      printToolResult(item.content, entry.toolUseResult, entry.timestamp);
     }
     if (showOutput && item.type === 'text' && item.text) {
       printTextResponse(item.text, entry.timestamp);
@@ -269,11 +317,13 @@ const sessionIdFromFile = path.basename(sessionFile, '.jsonl');
 
 // Resolve flags
 const showTools = cli.flags.tools || cli.flags.all;
+const showToolOutput = cli.flags.toolOutput || cli.flags.all;
 const showOutput = cli.flags.output || cli.flags.all;
 
 // Build description of what we're showing
 const parts = ['thinking'];
 if (showTools) parts.push('tools');
+if (showToolOutput) parts.push('tool-output');
 if (showOutput) parts.push('output');
 const modeDesc = parts.join(' + ');
 
@@ -287,7 +337,7 @@ console.log(chalk.dim('───────────────────
 const existingContent = fs.readFileSync(sessionFile, 'utf8');
 for (const line of existingContent.split('\n').filter(Boolean)) {
   try {
-    processEntry(JSON.parse(line), { showTools, showOutput });
+    processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput });
   } catch {}
 }
 
@@ -309,7 +359,7 @@ watcher.on('change', () => {
 
     for (const line of buffer.toString().split('\n').filter(Boolean)) {
       try {
-        processEntry(JSON.parse(line), { showTools, showOutput });
+        processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput });
       } catch {}
     }
     lastSize = newSize;

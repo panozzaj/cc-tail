@@ -9,13 +9,19 @@
   "scripts": {
     "start": "node src/index.js"
   },
-  "keywords": ["claude", "claude-code", "thinking", "tail"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "thinking",
+    "tail"
+  ],
   "author": "",
   "license": "ISC",
   "description": "Tail thinking from Claude Code sessions",
   "dependencies": {
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
+    "cli-highlight": "^2.1.11",
     "diff": "^8.0.3",
     "meow": "^14.0.0"
   }
