@@ -223,7 +223,7 @@ function printThinking(thinking, timestamp) {
   thinkingCount++;
 
   console.log();
-  console.log(chalk.dim(`─── ${chalk.yellow('thinking')} @ ${formatTime(timestamp)} ───`));
+  console.log(chalk.dim('─── ') + chalk.yellow.bold('thinking') + chalk.dim(` @ ${formatTime(timestamp)} ───`));
 
   const wrapped = wrapText(thinking);
   for (const line of wrapped.split('\n')) {
@@ -247,7 +247,7 @@ function highlightCodeBlocks(text) {
 // Print Claude's text response
 function printTextResponse(text, timestamp) {
   console.log();
-  console.log(chalk.dim(`─── ${chalk.white('response')} @ ${formatTime(timestamp)} ───`));
+  console.log(chalk.dim('─── ') + chalk.white.bold('response') + chalk.dim(` @ ${formatTime(timestamp)} ───`));
   // Wrap text but preserve code blocks
   const wrapped = wrapTextPreservingCodeBlocks(text);
   console.log(highlightCodeBlocks(wrapped));
@@ -280,14 +280,14 @@ function printUserMessage(content, timestamp) {
   if (!text) return;
 
   console.log();
-  console.log(chalk.dim(`─── ${chalk.magenta('user')} @ ${formatTime(timestamp)} ───`));
+  console.log(chalk.dim('─── ') + chalk.magenta.bold('user') + chalk.dim(` @ ${formatTime(timestamp)} ───`));
   console.log(chalk.magenta(wrapText(text)));
 }
 
 // Print a tool call
 function printToolCall(name, input, timestamp) {
   console.log();
-  console.log(chalk.dim(`─── ${chalk.cyan(name)} @ ${formatTime(timestamp)} ───`));
+  console.log(chalk.dim('─── ') + chalk.cyan.bold(name) + chalk.dim(` @ ${formatTime(timestamp)} ───`));
 
   switch (name) {
     case 'Edit': {

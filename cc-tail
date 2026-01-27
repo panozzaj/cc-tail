@@ -176,7 +176,7 @@ format_tool_call() {
     local timestamp="$3"
 
     echo ""
-    echo "${DIM}─── ${CYAN}${tool_name}${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
+    echo "${DIM}───${RESET} ${BOLD}${CYAN}${tool_name}${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
 
     case "$tool_name" in
         Edit)
@@ -265,7 +265,7 @@ format_response() {
     local timestamp="$2"
 
     echo ""
-    echo "${DIM}─── ${WHITE}response${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
+    echo "${DIM}───${RESET} ${BOLD}${WHITE}response${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
     echo "$text" | wrap_text | while IFS= read -r line; do
         echo "${WHITE}${line}${RESET}"
     done
@@ -277,7 +277,7 @@ format_user_message() {
     local timestamp="$2"
 
     echo ""
-    echo "${DIM}─── ${MAGENTA}user${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
+    echo "${DIM}───${RESET} ${BOLD}${MAGENTA}user${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
     echo "$text" | wrap_text | while IFS= read -r line; do
         echo "${MAGENTA}${line}${RESET}"
     done
@@ -357,7 +357,7 @@ $read_cmd "$SESSION_FILE" | while read -r line; do
         thinking=$(echo "$line" | jq -r '.message.content[] | select(.type == "thinking") | .thinking' 2>/dev/null)
         if [[ -n "$thinking" && "$thinking" != "null" ]]; then
             echo ""
-            echo "${DIM}─── ${YELLOW}thinking${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
+            echo "${DIM}───${RESET} ${BOLD}${YELLOW}thinking${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
             format_thinking "$thinking" "$counter"
             ((counter++)) || true
         fi
