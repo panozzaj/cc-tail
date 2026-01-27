@@ -266,8 +266,8 @@ format_user_message() {
     local timestamp="$2"
 
     echo ""
-    echo "${DIM}─── ${GREEN}user${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
-    echo "${GREEN}${text}${RESET}"
+    echo "${DIM}─── ${MAGENTA}user${RESET} ${DIM}@ $(format_time "$timestamp") ───${RESET}"
+    echo "${MAGENTA}${text}${RESET}"
 }
 
 # Find session file
@@ -324,7 +324,14 @@ $read_cmd "$SESSION_FILE" | while read -r line; do
     # User messages
     if [[ "$SHOW_USER" == true ]]; then
         if echo "$line" | jq -e 'select(.type == "user")' >/dev/null 2>&1; then
-            user_content=$(echo "$line" | jq -r '.message.content // empty' 2>/dev/null)
+            # Content can be a string or an array
+            content_type=$(echo "$line" | jq -r '.message.content | type' 2>/dev/null)
+            if [[ "$content_type" == "string" ]]; then
+                user_content=$(echo "$line" | jq -r '.message.content // empty' 2>/dev/null)
+            elif [[ "$content_type" == "array" ]]; then
+                # Extract text from array items
+                user_content=$(echo "$line" | jq -r '.message.content[] | select(.type == "text") | .text // empty' 2>/dev/null)
+            fi
             if [[ -n "$user_content" && "$user_content" != "null" ]]; then
                 format_user_message "$user_content" "$timestamp"
             fi

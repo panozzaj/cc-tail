@@ -209,10 +209,24 @@ function printTextResponse(text, timestamp) {
 }
 
 // Print user message
-function printUserMessage(text, timestamp) {
+function printUserMessage(content, timestamp) {
+  // Content can be a string or an array of objects
+  let text;
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
+    // Extract text from array items
+    text = content
+      .filter(item => item.type === 'text' && item.text)
+      .map(item => item.text)
+      .join('\n');
+  }
+
+  if (!text) return;
+
   console.log();
-  console.log(chalk.dim(`─── ${chalk.green('user')} @ ${formatTime(timestamp)} ───`));
-  console.log(chalk.green(text));
+  console.log(chalk.dim(`─── ${chalk.magenta('user')} @ ${formatTime(timestamp)} ───`));
+  console.log(chalk.magenta(text));
 }
 
 // Print a tool call
@@ -294,8 +308,18 @@ function printToolResult(content, toolUseResult, timestamp) {
 // Process a single JSONL entry
 function processEntry(entry, { showTools, showToolOutput, showOutput, showUser }) {
   // Handle user messages (top-level type)
-  if (showUser && entry.type === 'user' && entry.message?.content) {
-    printUserMessage(entry.message.content, entry.timestamp);
+  if (entry.type === 'user' && entry.message?.content) {
+    if (showUser) {
+      printUserMessage(entry.message.content, entry.timestamp);
+    }
+    // Also check for tool_result in user message content (tool results come back as user messages)
+    if (showToolOutput && Array.isArray(entry.message.content)) {
+      for (const item of entry.message.content) {
+        if (item.type === 'tool_result') {
+          printToolResult(item.content, entry.toolUseResult, entry.timestamp);
+        }
+      }
+    }
     return;
   }
 
