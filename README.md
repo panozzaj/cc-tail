@@ -2,6 +2,10 @@
 
 Tail thinking blocks from Claude Code sessions. Useful for understanding Claude's reasoning process in real-time or reviewing past sessions.
 
+Here's Claude Code running on the left pane, and a cc-tail process running on the right side:
+
+<img width="1510" height="746" alt="image" src="https://github.com/user-attachments/assets/d787039d-3fab-45af-b8bd-5dee8f7e355d" />
+
 ## Why
 
 Claude Code doesn't show thinking by default - you need `Ctrl+O` then `Ctrl+E` to view it after the fact. This tool lets you follow thinking in real-time in a separate terminal.
