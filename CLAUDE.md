@@ -31,7 +31,7 @@ No tests or linting configured.
 
 Two parallel implementations exist with identical CLI interfaces:
 
-- **`src/index.js`** - Node.js version using ES modules. Uses `chokidar` for file watching, `diff` for unified diffs, and `cli-highlight` for syntax highlighting.
+- **`src/index.js`** - Node.js version using ES modules. Uses `chokidar` for file watching, `diff` for unified diffs, and `cli-highlight` for syntax highlighting. This is the entire JS app — one file, no modules.
 - **`cc-tail`** - Bash version using `jq` for JSON parsing and `tail -f` for following.
 
 Both read Claude Code session files (JSONL format) from `~/.claude/projects/{path-with-dashes-not-slashes}/{session-id}.jsonl`.
@@ -43,3 +43,4 @@ Both read Claude Code session files (JSONL format) from `~/.claude/projects/{pat
 - User messages have top-level `type: "user"` with content as string or array
 - Thinking blocks are displayed in rotating blue/gray colors
 - Tool calls (Edit, Write, Bash, Read, Glob, Grep, Task) have custom formatters
+- CLI arg parsing: first positional arg starting with `/`, `.`, or `~` is treated as a project path; otherwise as session ID
