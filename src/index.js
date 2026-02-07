@@ -12,33 +12,47 @@ const cli = meow(`
   ${chalk.bold('cc-tail')} - Tail thinking from Claude Code sessions
 
   ${chalk.dim('Usage')}
-    $ cc-tail [options] [session-id] [project-path]
+    $ cc-tail [options] [project-path] [session-id]
+    $ cc-tail [options] <path-to-file.jsonl>
 
   ${chalk.dim('Options')}
+    -l, --list     List sessions in the project directory
     --no-follow    Print existing content and exit (default: follow live)
+    --no-thinking  Hide thinking blocks (shown by default)
+    --no-user      Hide user messages (shown by default)
     --tools        Also show tool calls (Edit, Bash, Write, etc.)
     --tool-output  Also show tool results/outputs
     --output       Also show Claude's text responses
-    --user         Also show user messages
     --all          Show everything
     -h, --help     Show this help
 
   ${chalk.dim('Examples')}
-    $ cc-tail                          # follow live thinking
+    $ cc-tail                          # follow live in current project
+    $ cc-tail -l                       # list sessions in current project
+    $ cc-tail /path/to/project         # follow live in specific project
+    $ cc-tail /path/to/project -l      # list sessions in specific project
     $ cc-tail --no-follow              # print existing and exit
     $ cc-tail --tools                  # include tool calls
     $ cc-tail --all                    # show everything
+    $ cc-tail ./path/to/session.jsonl  # tail a specific file
 `, {
   importMeta: import.meta,
   flags: {
+    list: { type: 'boolean', shortFlag: 'l', default: false },
     follow: { type: 'boolean', default: true },
+    thinking: { type: 'boolean', default: true },
     tools: { type: 'boolean', default: false },
     toolOutput: { type: 'boolean', default: false },
     output: { type: 'boolean', default: false },
-    user: { type: 'boolean', default: false },
+    user: { type: 'boolean', default: true },
     all: { type: 'boolean', default: false },
   },
 });
+
+// meow handles --help but not -h
+if (process.argv.includes('-h')) {
+  cli.showHelp();
+}
 
 // Color palette - centralized for consistency
 const COLORS = {
@@ -61,10 +75,15 @@ function pathToClaudeDir(p) {
   return p.replace(/\//g, '-');
 }
 
+// Get project directory for Claude sessions
+function getProjectDir(projectPath) {
+  const claudeDir = path.join(os.homedir(), '.claude', 'projects');
+  return path.join(claudeDir, pathToClaudeDir(projectPath || process.cwd()));
+}
+
 // Find the session file
 function findSessionFile(sessionId, projectPath) {
-  const claudeDir = path.join(os.homedir(), '.claude', 'projects');
-  const projectDir = path.join(claudeDir, pathToClaudeDir(projectPath || process.cwd()));
+  const projectDir = getProjectDir(projectPath);
 
   if (sessionId) {
     return path.join(projectDir, `${sessionId}.jsonl`);
@@ -78,6 +97,129 @@ function findSessionFile(sessionId, projectPath) {
     .sort((a, b) => b.mtime - a.mtime);
 
   return files.length ? path.join(projectDir, files[0].name) : null;
+}
+
+// Get a quick summary of a session file
+function getSessionSummary(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n').filter(Boolean);
+
+    let firstUserMessage = null;
+    let messageCount = 0;
+    let thinkingCount = 0;
+    let toolCount = 0;
+
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+
+        // Count user messages and get first one
+        if (entry.type === 'user' && entry.message?.content) {
+          messageCount++;
+          if (!firstUserMessage) {
+            const content = entry.message.content;
+            if (typeof content === 'string') {
+              firstUserMessage = content;
+            } else if (Array.isArray(content)) {
+              const textItem = content.find(item => item.type === 'text' && item.text);
+              if (textItem) firstUserMessage = textItem.text;
+            }
+          }
+        }
+
+        // Count thinking blocks and tool uses
+        if (Array.isArray(entry.message?.content)) {
+          for (const item of entry.message.content) {
+            if (item.type === 'thinking') thinkingCount++;
+            if (item.type === 'tool_use') toolCount++;
+          }
+        }
+      } catch {}
+    }
+
+    // Truncate first user message
+    if (firstUserMessage) {
+      firstUserMessage = firstUserMessage.replace(/\n/g, ' ').slice(0, 60);
+      if (firstUserMessage.length === 60) firstUserMessage += '...';
+    }
+
+    return { firstUserMessage, messageCount, thinkingCount, toolCount };
+  } catch {
+    return null;
+  }
+}
+
+// List sessions in the project directory
+function listSessions(projectPath) {
+  const projectDir = getProjectDir(projectPath);
+
+  if (!fs.existsSync(projectDir)) {
+    console.error(chalk.red('No sessions found'));
+    console.error(chalk.dim(`Looked in: ${projectDir}`));
+    process.exit(1);
+  }
+
+  const files = fs.readdirSync(projectDir)
+    .filter(f => f.endsWith('.jsonl'))
+    .map(f => {
+      const filePath = path.join(projectDir, f);
+      const stat = fs.statSync(filePath);
+      return { name: f, mtime: stat.mtime, size: stat.size, path: filePath };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+
+  if (files.length === 0) {
+    console.error(chalk.red('No sessions found'));
+    process.exit(1);
+  }
+
+  console.log(chalk.bold('Sessions in'), chalk.dim(shortPath(projectDir)));
+  console.log(chalk.dim('────────────────────────────────────────'));
+
+  for (const file of files) {
+    const sessionId = path.basename(file.name, '.jsonl');
+    const shortId = sessionId.slice(0, 8);
+    const timeAgo = getTimeAgo(file.mtime);
+    const summary = getSessionSummary(file.path);
+
+    console.log();
+    console.log(
+      chalk.cyan(shortId),
+      chalk.dim('|'),
+      chalk.yellow(timeAgo),
+      chalk.dim('|'),
+      chalk.dim(`${(file.size / 1024).toFixed(0)}KB`)
+    );
+
+    if (summary) {
+      const stats = [];
+      if (summary.messageCount) stats.push(`${summary.messageCount} msgs`);
+      if (summary.thinkingCount) stats.push(`${summary.thinkingCount} thinking`);
+      if (summary.toolCount) stats.push(`${summary.toolCount} tools`);
+
+      if (stats.length) {
+        console.log(chalk.dim(`  ${stats.join(', ')}`));
+      }
+      if (summary.firstUserMessage) {
+        console.log(chalk.white(`  "${summary.firstUserMessage}"`));
+      }
+    }
+  }
+
+  console.log();
+  console.log(chalk.dim(`${files.length} session(s)`));
+}
+
+// Get human-readable time ago
+function getTimeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  return date.toLocaleDateString();
 }
 
 // Shorten home directory in paths
@@ -361,7 +503,7 @@ function printToolResult(content, toolUseResult, timestamp) {
 }
 
 // Process a single JSONL entry
-function processEntry(entry, { showTools, showToolOutput, showOutput, showUser }) {
+function processEntry(entry, { showThinking, showTools, showToolOutput, showOutput, showUser }) {
   // Handle user messages (top-level type)
   if (entry.type === 'user' && entry.message?.content) {
     if (showUser) {
@@ -382,7 +524,7 @@ function processEntry(entry, { showTools, showToolOutput, showOutput, showUser }
   if (!Array.isArray(content)) return;
 
   for (const item of content) {
-    if (item.type === 'thinking' && item.thinking) {
+    if (showThinking && item.type === 'thinking' && item.thinking) {
       printThinking(item.thinking, entry.timestamp);
     }
     if (showTools && item.type === 'tool_use') {
@@ -398,8 +540,29 @@ function processEntry(entry, { showTools, showToolOutput, showOutput, showUser }
 }
 
 // Main
-const [sessionId, projectPath] = cli.input;
-const sessionFile = findSessionFile(sessionId, projectPath);
+// Smart arg parsing: detect direct file path, project path, or session ID
+let [arg1, arg2] = cli.input;
+let sessionId, projectPath, directFile;
+
+if (arg1 && arg1.endsWith('.jsonl')) {
+  // Direct path to a .jsonl file
+  directFile = path.resolve(arg1);
+} else if (arg1 && (arg1.startsWith('/') || arg1.startsWith('.') || arg1.startsWith('~'))) {
+  // First arg is a project path
+  projectPath = arg1;
+  sessionId = arg2;
+} else {
+  sessionId = arg1;
+  projectPath = arg2;
+}
+
+// Handle --list flag
+if (cli.flags.list) {
+  listSessions(projectPath);
+  process.exit(0);
+}
+
+const sessionFile = directFile || findSessionFile(sessionId, projectPath);
 
 if (!sessionFile || !fs.existsSync(sessionFile)) {
   console.error(chalk.red('No session file found'));
@@ -410,17 +573,19 @@ if (!sessionFile || !fs.existsSync(sessionFile)) {
 const sessionIdFromFile = path.basename(sessionFile, '.jsonl');
 
 // Resolve flags
+const showThinking = cli.flags.thinking || cli.flags.all;
 const showTools = cli.flags.tools || cli.flags.all;
 const showToolOutput = cli.flags.toolOutput || cli.flags.all;
 const showOutput = cli.flags.output || cli.flags.all;
 const showUser = cli.flags.user || cli.flags.all;
 
 // Build description of what we're showing
-const parts = ['thinking'];
+const parts = [];
+if (showThinking) parts.push('thinking');
+if (showUser) parts.push('user');
 if (showTools) parts.push('tools');
 if (showToolOutput) parts.push('tool-output');
 if (showOutput) parts.push('output');
-if (showUser) parts.push('user');
 const modeDesc = parts.join(' + ');
 
 // Print header
@@ -433,7 +598,7 @@ console.log(chalk.dim('───────────────────
 const existingContent = fs.readFileSync(sessionFile, 'utf8');
 for (const line of existingContent.split('\n').filter(Boolean)) {
   try {
-    processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput, showUser });
+    processEntry(JSON.parse(line), { showThinking, showTools, showToolOutput, showOutput, showUser });
   } catch {}
 }
 
@@ -455,7 +620,7 @@ watcher.on('change', () => {
 
     for (const line of buffer.toString().split('\n').filter(Boolean)) {
       try {
-        processEntry(JSON.parse(line), { showTools, showToolOutput, showOutput, showUser });
+        processEntry(JSON.parse(line), { showThinking, showTools, showToolOutput, showOutput, showUser });
       } catch {}
     }
     lastSize = newSize;
