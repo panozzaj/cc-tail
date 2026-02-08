@@ -109,10 +109,20 @@ function getSessionSummary(filePath) {
     let messageCount = 0;
     let thinkingCount = 0;
     let toolCount = 0;
+    let compactionCount = 0;
 
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
+
+        // Count compactions
+        if (entry.type === 'system' && entry.subtype === 'compact_boundary') {
+          compactionCount++;
+          continue;
+        }
+
+        // Skip synthetic compaction summaries
+        if (entry.isCompactSummary) continue;
 
         // Count user messages and get first one
         if (entry.type === 'user' && entry.message?.content) {
@@ -144,7 +154,7 @@ function getSessionSummary(filePath) {
       if (firstUserMessage.length === 60) firstUserMessage += '...';
     }
 
-    return { firstUserMessage, messageCount, thinkingCount, toolCount };
+    return { firstUserMessage, messageCount, thinkingCount, toolCount, compactionCount };
   } catch {
     return null;
   }
@@ -197,6 +207,7 @@ function listSessions(projectPath) {
       if (summary.messageCount) stats.push(`${summary.messageCount} msgs`);
       if (summary.thinkingCount) stats.push(`${summary.thinkingCount} thinking`);
       if (summary.toolCount) stats.push(`${summary.toolCount} tools`);
+      if (summary.compactionCount) stats.push(chalk.yellow(`${summary.compactionCount} compaction${summary.compactionCount > 1 ? 's' : ''}`));
 
       if (stats.length) {
         console.log(chalk.dim(`  ${stats.join(', ')}`));
@@ -502,8 +513,49 @@ function printToolResult(content, toolUseResult, timestamp) {
   }
 }
 
+// Print compaction boundary
+function printCompactionBoundary(entry) {
+  const meta = entry.compactMetadata || {};
+  const trigger = meta.trigger || 'unknown';
+  const preTokens = meta.preTokens;
+
+  console.log();
+  console.log(chalk.yellow('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+  const info = [
+    chalk.yellow.bold('⟳ compacted'),
+    chalk.dim(`@ ${formatTime(entry.timestamp)}`),
+    chalk.dim(`trigger: ${trigger}`),
+  ];
+  if (preTokens) info.push(chalk.dim(`${(preTokens / 1000).toFixed(0)}k tokens`));
+  console.log(info.join(' '));
+  console.log(chalk.yellow('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
+}
+
 // Process a single JSONL entry
 function processEntry(entry, { showThinking, showTools, showToolOutput, showOutput, showUser }) {
+  // Handle compaction boundary
+  if (entry.type === 'system' && entry.subtype === 'compact_boundary') {
+    printCompactionBoundary(entry);
+    return;
+  }
+
+  // Skip synthetic compaction summary (unless --all, show as dimmed)
+  if (entry.isCompactSummary) {
+    if (showOutput) {
+      const text = typeof entry.message?.content === 'string'
+        ? entry.message.content
+        : '';
+      if (text) {
+        // Show just the first few lines of the summary
+        const lines = text.split('\n');
+        const preview = lines.slice(0, 5).join('\n');
+        console.log(chalk.dim(wrapText(preview)));
+        if (lines.length > 5) console.log(chalk.dim(`  ... (${lines.length - 5} more lines in compaction summary)`));
+      }
+    }
+    return;
+  }
+
   // Handle user messages (top-level type)
   if (entry.type === 'user' && entry.message?.content) {
     if (showUser) {
